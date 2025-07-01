@@ -32,7 +32,7 @@ VALID_CLASS_IDS = list(KNOWN_HEIGHTS.keys())
 model = YOLO(r"/Users/seongbaepark/Desktop/workspace/privateWorkspace/python/telosGithub/lanedetection_final/best.pt")
 
 # 경고 배너 이미지 불러오기
-warning_banner = cv2.imread("warning_banner.png", cv2.IMREAD_UNCHANGED)
+warning_banner = cv2.imread("/Users/seongbaepark/Desktop/workspace/privateWorkspace/python/telosGithub/lanedetection_final/warning_banner.png", cv2.IMREAD_UNCHANGED)
 if warning_banner is not None:
     warning_banner = cv2.resize(warning_banner, (0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
 
