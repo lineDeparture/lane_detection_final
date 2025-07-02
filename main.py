@@ -7,6 +7,8 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,
 from PyQt5.QtCore import QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QImage, QPixmap
 from typing import Optional
+from pathlib import Path
+from socketUtil.socketClient import SocketClient
 
 # --- 설정값 ---
 CONF_THRESHOLD = 0.3
@@ -30,10 +32,10 @@ CLASS_COLORS = {
     7: (255, 0, 255)
 }
 VALID_CLASS_IDS = list(KNOWN_HEIGHTS.keys())
-
-MODEL_PATH = r"best.pt"
-WARNING_BANNER_PATH = r"warning_banner.png"
-WARNING_ICON_PATH = r"warning_icon.png"  
+resource_path = Path(__file__)/ "resource"
+MODEL_PATH = "resource/best.pt"
+WARNING_BANNER_PATH = "resource/warning_banner.png"
+WARNING_ICON_PATH = "resource/warning_icon.png"  
 
 def draw_text_with_background(img, text, org, font, scale, color, thickness):
     (tw, th), base = cv2.getTextSize(text, font, scale, thickness)
@@ -41,6 +43,7 @@ def draw_text_with_background(img, text, org, font, scale, color, thickness):
     cv2.rectangle(img, (x, y - th - base), (x + tw + 4, y + base), (0, 0, 0), -1)
     cv2.putText(img, text, org, font, scale, color, thickness)
 
+#경고 이미지 배너 오버레이 함수
 def overlay_warning_banner(frame, banner_img, x, y):
     bh, bw = banner_img.shape[:2]
     fh, fw = frame.shape[:2]
@@ -70,6 +73,12 @@ class VideoThread(QThread):
 
     def __init__(self, module_name: str, video_path: str):
         super().__init__()
+
+        self.socket_client = SocketClient()
+        self.socket_client.socket_connet()
+        self.socket_client.start()
+
+
         self.module_name = module_name
         self.video_path = video_path
         self.running = True
@@ -84,19 +93,24 @@ class VideoThread(QThread):
         if self.warning_icon is not None:
             self.warning_icon = cv2.resize(self.warning_icon, (60, 60), interpolation=cv2.INTER_AREA)
 
+    # --- 객체 검출 후 거리 계산 및 경고 표시 ---
     def process_detections(self, results, lane_polygon, M, frame_shape, annotated_frame):
         collision_warning = False
+
         for box in results[0].boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             conf = float(box.conf.item())
             class_id = int(box.cls.item())
             pixel_height = y2 - y1
+
             if pixel_height < 5:
                 continue
+
             center_y = y2 - 0.2 * (y2 - y1)
             center = np.array([[(x1 + x2) / 2, center_y]], dtype=np.float32)
             # polygon 내부인지 여부
             is_inside = cv2.pointPolygonTest(lane_polygon, tuple(center[0]), False)
+
             if class_id in VALID_CLASS_IDS and conf > CONF_THRESHOLD and pixel_height > 20:
                 center_warped = cv2.perspectiveTransform(np.array([center]), M)[0][0]
                 known_height = KNOWN_HEIGHTS.get(class_id, 170)
@@ -106,6 +120,7 @@ class VideoThread(QThread):
                 dist_y = max(50, dist_y)
                 distance_cm = dist_pixel * 0.7 + dist_y * 0.3
                 distance_m = distance_cm / 100
+
                 if distance_cm < DIST_THRESHOLD:
                     collision_warning = True
                     box_color = (0, 0, 255)
@@ -115,6 +130,8 @@ class VideoThread(QThread):
                         icon_x = x1
                         icon_y = y1 - self.warning_icon.shape[0] - 10
                         overlay_warning_banner(annotated_frame, self.warning_icon, icon_x, icon_y)
+                    # self.socket_client.set_data(class_id,  distance_cm, annotated_frame)
+                    self.socket_client.set_data(class_id,  distance_cm, frame_shape[0])
                 else:
                     box_color = CLASS_COLORS.get(class_id, (255, 255, 255))
                     thickness = 2
@@ -128,6 +145,7 @@ class VideoThread(QThread):
     def run(self):
 
         import line_check_frame
+
         line_check_module = line_check_frame
         # 동적 모듈 로딩
         if self.module_name == "line_check":
@@ -144,7 +162,7 @@ class VideoThread(QThread):
 
         cap = cv2.VideoCapture(self.video_path)
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        out = cv2.VideoWriter("output.avi", fourcc, 30, (RESIZE_WIDTH, RESIZE_HEIGHT))
+        out = cv2.VideoWriter("output.mp4", fourcc, 30, (RESIZE_WIDTH, RESIZE_HEIGHT))
 
         ret, frame = cap.read()
         height, width = frame.shape[:2]
@@ -189,12 +207,17 @@ class VideoThread(QThread):
                 results, lane_polygon[0], M, frame.shape, lane_result)
 
             warning_counter = min(warning_counter + 5, 30) if collision_warning else max(warning_counter - 1, 0)
+            # 경고 카운터가 있을 시, 경로상 경고 배너 이미지가 존재할 시 아래 로직 실행 
             if warning_counter > 0 and self.warning_banner is not None:
                 banner_width = self.warning_banner.shape[1]
                 x_pos = int((RESIZE_WIDTH - banner_width) / 2)
                 y_pos = -90
                 overlay_warning_banner(annotated_frame, self.warning_banner, x_pos, y_pos)
+            
 
+        
+            
+            # FPS 계산 및 표시
             fps = 1.0 / (time.time() - start_time)
             cv2.putText(annotated_frame, f"FPS: {fps:.1f}", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
@@ -207,6 +230,7 @@ class VideoThread(QThread):
 
     def stop(self):
         self.running = False
+        self.socket_client.stop()
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -256,7 +280,7 @@ class MainWindow(QMainWindow):
     def start_video(self):
         if self.thread is None or not self.thread.running:
             module_name = self.module_combo.currentText()
-            video_path = self.video_combo.currentText()
+            video_path = "resource/" +  self.video_combo.currentText()
             self.thread = VideoThread(module_name, video_path)
             self.thread.change_pixmap_signal.connect(self.update_image)
             self.thread.finished_signal.connect(self.video_finished)
@@ -268,6 +292,7 @@ class MainWindow(QMainWindow):
 
     def stop_video(self):
         if self.thread and self.thread.running:
+            
             self.thread.stop()
             self.thread.wait()
             self.start_button.setEnabled(True)
@@ -276,10 +301,15 @@ class MainWindow(QMainWindow):
             self.video_combo.setEnabled(True)
 
     def video_finished(self):
-        self.start_button.setEnabled(True)
-        self.stop_button.setEnabled(False)
-        self.module_combo.setEnabled(True)
-        self.video_combo.setEnabled(True)
+        if self.thread is None:
+            return
+        if self.thread.running:
+            self.thread.stop()
+            self.thread.wait()
+            self.start_button.setEnabled(True)
+            self.stop_button.setEnabled(False)
+            self.module_combo.setEnabled(True)
+            self.video_combo.setEnabled(True)
 
     def update_image(self, cv_img):
         rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
@@ -288,12 +318,6 @@ class MainWindow(QMainWindow):
         convert_to_qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
         p = convert_to_qt_format.scaled(self.video_label.width(), self.video_label.height(), Qt.KeepAspectRatio)
         self.video_label.setPixmap(QPixmap.fromImage(p))
-
-    def closeEvent(self, event):
-        if self.thread and self.thread.running:
-            self.thread.stop()
-            self.thread.wait()
-        event.accept()
 
 def main():
     app = QApplication(sys.argv)
