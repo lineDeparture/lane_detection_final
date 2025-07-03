@@ -1,18 +1,15 @@
-
-
-from datetime import datetime
 import socket
 import json
-import sys
+import os
 import configparser
-
-from pathlib import Path
-
-
-from dataclasses import dataclass
-from typing import List
 import time
 import threading
+
+from datetime import datetime
+from pathlib import Path
+from dataclasses import dataclass
+from typing import List
+
 
 
 
@@ -32,6 +29,9 @@ class SocketClient():
         # ip, port 정보 읽어오기 
         self.SERVER_IP = config['SERVER']['ip']
         self.PORT = config['SERVER']['port']
+        self.VIDEO_PORT  = config['SERVER']['video_port']
+
+        self.chunk_size = 4096
 
         print(f"Connecting to server at {self.SERVER_IP}:{int(self.PORT)}") 
 
@@ -49,14 +49,29 @@ class SocketClient():
 
 
     # 소켓 연결 함수
-    def socket_connet(self):
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.connect((self.SERVER_IP, int(self.PORT)))
+    def socket_connet(self, isVideoSocket=False):
+        # 소켓연결 로직을 두개로 분기. 
+        # isVideoSocket이 True면 비디오 서버로 연결
+        # False면 일반 서버로 연결
+        if isVideoSocket: 
+            print(f"[SocketClient] Connecting to video server at {self.SERVER_IP}:{int(self.VIDEO_PORT)}")
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.connect((self.SERVER_IP, int(self.VIDEO_PORT)))    
+        else:
+            print(f"[SocketClient] Connecting to normal {self.SERVER_IP}:{int(self.PORT)}")
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.connect((self.SERVER_IP, int(self.PORT)))
 
     # 소켓 스레드 시작 함수
-    def start(self):
+    def start(self, isVideoSocket=False):
         self.running = True
-        self.thread = threading.Thread(target=self._send_loop, daemon=True)
+        # 데이터 전송 방식 분기 
+        # isVideoSocket이 True면 비디오 전송 스레드 시작
+        # False면 일반 데이터 전송 스레드 시작
+        if isVideoSocket:
+            self.thread = threading.Thread(target=self._send_video_loop, daemon=True)
+        else:
+            self.thread = threading.Thread(target=self._send_loop, daemon=True)
         self.thread.start()
 
 
@@ -80,8 +95,6 @@ class SocketClient():
 
             self.current_data = log_data
 
-
-    
     # 데이터가 설정되면 스레드가 데이터를 전송하도록 함
     def _send_loop(self):
         try:
@@ -102,9 +115,33 @@ class SocketClient():
                 time.sleep(0.1)  # 전송 간격
         finally:
             self._cleanup()
-        
 
 
+    # 비디오 전송을 위한 스레드 함수
+    # 비디오 파일을 서버로 전송하는 역할을 함
+    def _send_video_loop(self):
+        current_path = Path(__file__).parent.parent
+
+        file_path =current_path/"output.mp4"  # 실제 파일 경로
+        # 파일명과 파일 크기를 먼저 보냄
+        filename = os.path.basename(file_path)
+        filesize = os.path.getsize(file_path)
+        header = f"{filename}:{filesize}".encode().ljust(256, b' ')  # 고정 길이 header
+        self.sock.sendall(header)
+        print("[Client] Sending video file:", filename)
+
+        # 파일 전송
+        with open(file_path, "rb") as f:
+            # 동영상 파일 전달을 중간에 끊을 필요가 없으므로 별도의 스레드 플래그를 삽입하지 않음. 
+            while True:            
+                chunk = f.read(self.chunk_size)
+                if not chunk:
+                    break
+                self.sock.sendall(chunk)
+        print("[Client] Video file transfer completed.")
+        self._cleanup()
+
+            
 
     # 소켓 연결 종료 함수
     def stop(self):
@@ -117,6 +154,7 @@ class SocketClient():
 
     # 소켓 자원 정리 함수
     def _cleanup(self):
+        print("[SocketClient] Cleaning up resources")
         if self.sock:
             try:
                 self.sock.close()
