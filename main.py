@@ -37,6 +37,7 @@ MODEL_PATH = "resource/best.pt"
 WARNING_BANNER_PATH = "resource/warning_banner.png"
 WARNING_ICON_PATH = "resource/warning_icon.png"  
 
+# --- 텍스트 배경 그리기 함수 ---
 def draw_text_with_background(img, text, org, font, scale, color, thickness):
     (tw, th), base = cv2.getTextSize(text, font, scale, thickness)
     x, y = org
@@ -67,6 +68,8 @@ def overlay_warning_banner(frame, banner_img, x, y):
     else:
         frame[y1_frame:y2_frame, x1_frame:x2_frame] = banner_img[y1_banner:y2_banner, x1_banner:x2_banner]
 
+
+# --- 비디오 스레드 클래스 ---
 class VideoThread(QThread):
     change_pixmap_signal = pyqtSignal(np.ndarray)
     finished_signal = pyqtSignal()
@@ -142,6 +145,7 @@ class VideoThread(QThread):
                 cv2.circle(annotated_frame, (int(center_warped[0]), int(center_warped[1])), 5, (255, 0, 0), -1)
         return annotated_frame, collision_warning
 
+# --- 비디오 스레드 ---
     def run(self):
 
         import line_check_frame
@@ -215,29 +219,37 @@ class VideoThread(QThread):
                 overlay_warning_banner(annotated_frame, self.warning_banner, x_pos, y_pos)
             
 
-        
+    
             
             # FPS 계산 및 표시
             fps = 1.0 / (time.time() - start_time)
             cv2.putText(annotated_frame, f"FPS: {fps:.1f}", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-
             out.write(annotated_frame)
             self.change_pixmap_signal.emit(annotated_frame)
-        cap.release()
-        out.release()
-        self.finished_signal.emit()
 
+        # 비디오 종료 후 리소스 정리    
+        cap.release()
+        # 비디오 파일 저장
+        out.release()
+    
+        self.finished_signal.emit()
+        
+    
+
+#  --- 스레드 중지 함수 ---
     def stop(self):
         self.running = False
         self.socket_client.stop()
 
+# --- 메인 윈도우 클래스 ---
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.thread: Optional[VideoThread] = None
         self.init_ui()
 
+# --- UI 초기화 ---
     def init_ui(self):
         self.setWindowTitle("Lane Detection + YOLO + Warning")
         self.setGeometry(100, 100, 1400, 800)
@@ -277,8 +289,12 @@ class MainWindow(QMainWindow):
         self.video_label.setStyleSheet("border: 2px solid black;")
         layout.addWidget(self.video_label)
 
+
+# --- 비디오 시작 및 중지 함수 ---
     def start_video(self):
         if self.thread is None or not self.thread.running:
+            # self.send_video_data()
+            # return 
             module_name = self.module_combo.currentText()
             video_path = "resource/" +  self.video_combo.currentText()
             self.thread = VideoThread(module_name, video_path)
@@ -290,6 +306,7 @@ class MainWindow(QMainWindow):
             self.module_combo.setEnabled(False)
             self.video_combo.setEnabled(False)
 
+# --- 비디오 중지 함수 ---
     def stop_video(self):
         if self.thread and self.thread.running:
             
@@ -300,6 +317,7 @@ class MainWindow(QMainWindow):
             self.module_combo.setEnabled(True)
             self.video_combo.setEnabled(True)
 
+# --- 비디오 종료 후 처리 ---
     def video_finished(self):
         if self.thread is None:
             return
@@ -310,7 +328,16 @@ class MainWindow(QMainWindow):
             self.stop_button.setEnabled(False)
             self.module_combo.setEnabled(True)
             self.video_combo.setEnabled(True)
+            self.send_video_data()
+    
+# --- 비디오 데이터 전송 함수 ---
+    def send_video_data(self):
+        socket_client = SocketClient()
+        socket_client.socket_connet(isVideoSocket=True)
+        socket_client.start(isVideoSocket= True)
+        # socket_client.set_video_data()  # 비디오 종료 신호 전송
 
+# --- 이미지 업데이트 함수 ---
     def update_image(self, cv_img):
         rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_image.shape
@@ -319,6 +346,7 @@ class MainWindow(QMainWindow):
         p = convert_to_qt_format.scaled(self.video_label.width(), self.video_label.height(), Qt.KeepAspectRatio)
         self.video_label.setPixmap(QPixmap.fromImage(p))
 
+# --- 메인 함수 ---
 def main():
     app = QApplication(sys.argv)
     window = MainWindow()
