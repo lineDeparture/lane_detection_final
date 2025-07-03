@@ -32,7 +32,7 @@ CLASS_COLORS = {
     7: (255, 0, 255)
 }
 VALID_CLASS_IDS = list(KNOWN_HEIGHTS.keys())
-resource_path = Path(__file__)/ "resource"
+resource_path = Path(__file__).parent / "resource"
 MODEL_PATH = "resource/best.pt"
 WARNING_BANNER_PATH = "resource/warning_banner.png"
 WARNING_ICON_PATH = "resource/warning_icon.png"  
@@ -242,12 +242,26 @@ class VideoThread(QThread):
         self.running = False
         self.socket_client.stop()
 
+        
+
+
+
 # --- 메인 윈도우 클래스 ---
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.thread: Optional[VideoThread] = None
         self.init_ui()
+
+    def get_mp4_files(self, folder_path):
+        import os 
+        mp4_files = []
+        for file_name in os.listdir(folder_path):
+            if file_name.endswith(".mp4") or file_name.endswith(".avi"):
+                mp4_files.append(file_name)
+        return mp4_files
+
+
 
 # --- UI 초기화 ---
     def init_ui(self):
@@ -267,8 +281,10 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(self.module_combo)
 
         self.video_combo = QComboBox()
-        self.video_combo.addItems(["project_video.mp4", "challenge_video.mp4", "harder_challenge_video.mp4"])
-        self.video_combo.setCurrentText("harder_challenge_video.mp4")
+        # self.video_combo.addItems(["project_video.mp4", "challenge_video.mp4", "harder_challenge_video.mp4"])
+        files = self.get_mp4_files(resource_path / "test_video")
+        self.video_combo.addItems(files)
+        self.video_combo.setCurrentText(files[0] )
         control_layout.addWidget(QLabel("Video:"))
         control_layout.addWidget(self.video_combo)
 
@@ -296,7 +312,7 @@ class MainWindow(QMainWindow):
             # self.send_video_data()
             # return 
             module_name = self.module_combo.currentText()
-            video_path = "resource/" +  self.video_combo.currentText()
+            video_path = "resource/test_video/" +  self.video_combo.currentText()
             self.thread = VideoThread(module_name, video_path)
             self.thread.change_pixmap_signal.connect(self.update_image)
             self.thread.finished_signal.connect(self.video_finished)
