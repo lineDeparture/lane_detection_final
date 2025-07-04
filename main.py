@@ -168,19 +168,17 @@ class VideoThread(QThread):
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
         out = cv2.VideoWriter("output.mp4", fourcc, 30, (RESIZE_WIDTH, RESIZE_HEIGHT))
 
-        ret, frame = cap.read()
-        height, width = frame.shape[:2]
         src = np.float32([
-            [width * 0.45, height * 0.65],
-            [width * 0.55, height * 0.65],
-            [width * 0.9, height],
-            [width * 0.1, height]
+            [RESIZE_WIDTH * 0.45, RESIZE_HEIGHT * 0.57],
+            [RESIZE_WIDTH * 0.55, RESIZE_HEIGHT * 0.57],
+            [RESIZE_WIDTH * 0.9, RESIZE_HEIGHT],
+            [RESIZE_WIDTH * 0.1, RESIZE_HEIGHT]
         ])
         dst = np.float32([
-            [width * 0.3, 0],
-            [width * 0.7, 0],
-            [width * 0.7, height],
-            [width * 0.3, height]
+            [RESIZE_WIDTH * 0.3, 0],
+            [RESIZE_WIDTH * 0.7, 0],
+            [RESIZE_WIDTH * 0.7, RESIZE_HEIGHT],
+            [RESIZE_WIDTH * 0.3, RESIZE_HEIGHT]
         ])
 
         M = line_check_module.warp_M(src, dst)
