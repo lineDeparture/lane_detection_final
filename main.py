@@ -184,7 +184,7 @@ class VideoThread(QThread):
         M = line_check_module.warp_M(src, dst)
         Minv = line_check_module.Re_warp(src, dst)
 
-        LT = LaneTracker(nwindows=9, margin=200, minimum=30)
+        LT = LaneTracker(nwindows=9, margin=50, minimum=30)
 
         warning_counter = 0
 
