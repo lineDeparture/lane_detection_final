@@ -762,7 +762,7 @@ def get_region_brightness(image, x_ratio=0.5, y_ratio=0.6, region_size=0.2):
     brightness = np.mean(region)
     return brightness
 
-
+# 호출
 def line_check(frame, M, Minv, LT):
     orig = frame.copy()
     """
@@ -878,6 +878,7 @@ def combined_threshold(img):
 def open_img(img, iterations):
     return cv.morphologyEx(img, cv.MORPH_OPEN, kernel_small, iterations=iterations)
 
+# 최초호출 
 def line_check_sobel(frame, M, Minv, LT):
     orig = frame.copy()
 
