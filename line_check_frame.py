@@ -16,6 +16,7 @@ dst = np.array([[300, 0], [980, 0], [980, 720], [300, 720]], np.float32)
 
 kernel_small = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], 'uint8')
 # Convert image to yellow and white color space
+#hsv를 통해 흰색과 노란색만 남기기
 def color_space(img):
     # Convert image to HSV
     img_hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
@@ -29,7 +30,7 @@ def color_space(img):
     
     return cv.cvtColor(cv.bitwise_and(img, img, mask=masks), cv.COLOR_BGR2GRAY)
 
-
+#hls를 통해 흰색과 노란색만 남기기
 def color_space_hls(img):
     # Convert image to HSV
     img_hls = cv.cvtColor(img, cv.COLOR_BGR2HLS)
@@ -67,10 +68,9 @@ def color_space_hls(img):
 import numpy as np
 import cv2
 
-import numpy as np
-import cv2
-
+#차선 감지용 클래스
 class LaneTracker:
+    #nwindows : 슬라이딩 윈도우의 갯수, margin : 탐지할때의 마진 값, minimum : 탐지할때의 최솟값
     def __init__(self, nwindows=9, margin=200, minimum=30):
         self.prev_left_fit = None
         self.prev_right_fit = None
@@ -147,10 +147,11 @@ class LaneTracker:
         return ((nonzeroy >= win_y_low) & (nonzeroy < win_y_high) &
                 (nonzerox >= win_x_low) & (nonzerox < win_x_high)).nonzero()[0]
     
-
+    #warped_img 2진 이미지를 넣으면 그것을 바탕으로 차선을 탐지
+    #draw 가 True 라면 슬라이딩 윈도우 시각화 됨
     def update(self, warped_img, draw=False):
 
-        
+        #차선 데이터 상태 확인해서 안좋으면 차선 데이터 리셋 
         if self.should_reset(self.prev_left_fit, self.prev_right_fit, warped_img):
             #result = self.sliding_windows_visual(warped_img, draw)
             """
@@ -158,10 +159,15 @@ class LaneTracker:
                 plt.imshow(cv.cvtColor(self.dummy, cv.COLOR_BGR2RGB))
                 plt.show()
             """
+            #차선 데이터 없을때 차선 탐지
             result = self.sliding_windows_visual_central(warped_img, draw)
         else:
+            #이전 차선 데이터를 바탕으로 차선 탐지
+            #이전 차선 데이터를 바탕으로 차선을 탐지하다보니 한번 뒤틀리면 계속 뒤틀림
+            #그래서 결과값을 확인하고 결과값 리셋을 해줌
             result = self.quick_search(warped_img, draw)
 
+        #나온 결과값을 바탕으로 상태 안좋으면 결과값 리셋
         if self.should_reset(result["left"]["fit"], result["right"]["fit"], warped_img):
             self.reset_F = True
             result["left"]["fit"] = None
@@ -174,6 +180,8 @@ class LaneTracker:
         self.dummy = result["image"]
         return result
     #sliding window
+    #평범한 sliding_window 방식
+    #중간에서부터 슬라이딩 윈도우를 찾는 sliding_windows_visual_central 를 사용하는데 해당 방식이 안되면 이 방식을 한번 더 적용함
     def sliding_windows_visual(self, warped_img, draw):
         # ▶ ROI 마스킹: 잘못된 영역 제거
         mask = np.ones_like(warped_img, dtype=np.uint8) * 255
@@ -273,6 +281,7 @@ class LaneTracker:
         # ▶ 이상점 제거
         left_fit, right_fit = None, None
         if len(leftx) > 20:
+            #polyfit : 주어진 x,y 데이터를 바탕으로 다항식을 구해주는 함수 여기서는 마지변수가 2여서 2차함수
             left_fit = np.polyfit(lefty, leftx, 2)
             leftx, lefty = self.remove_outliers(leftx, lefty, left_fit)
             if len(leftx) > 0:
@@ -318,6 +327,7 @@ class LaneTracker:
     #sliding window 중앙 기준으로
     #기본은 화면 끝에서부터 측정해서 멀리있는 차선이 인식되거나 할 경우 있음
     #중앙 기준의 경우 커브가 있어 중앙을 넘거나 중앙에 교통 마크가 있으면 문제 발생 가능성 있음
+    #슬라이딩 윈도우는 아래에서부터 작은 화면을 통해 선을 추적하는 방식
     def sliding_windows_visual_central(self, warped_img_ori, draw):
 
         height, width = warped_img_ori.shape
@@ -443,6 +453,7 @@ class LaneTracker:
         # 이상점 제거
         left_fit, right_fit = None, None
         if len(leftx) > 20:
+            #polyfit : 주어진 x,y 데이터를 바탕으로 다항식을 구해주는 함수 여기서는 마지변수가 2여서 2차함수
             left_fit = np.polyfit(lefty, leftx, 2)
             leftx, lefty = self.remove_outliers(leftx, lefty, left_fit)
             if len(leftx) > 0:
@@ -558,19 +569,26 @@ class LaneTracker:
 
 
     # Warp image perspective
+#원근 변환
+#img : 이미지, M : 원근변환을 위한 행렬
 def warp(img, M):
     return cv.warpPerspective(img, M, (img.shape[1], img.shape[0]), flags=cv.INTER_NEAREST)
 
+#원근변환을 위한 행렬 구하는 함수
+#src : 원본 이미지에서 원근변환을 하고 싶은곳의 좌표값, dst : 원근 변환후의 좌표값
 def warp_M(src=src, dst=dst):
     M = cv.getPerspectiveTransform(src, dst)
     return M
 
-
+#역 원근변환을 위한 행렬 구하는 함수
+#src : 원본 이미지에서 원근변환을 하고 싶은곳의 좌표값, dst : 원근 변환후의 좌표값
 def Re_warp(src=src, dst=dst):
     Minv = cv.getPerspectiveTransform(dst, src)
     return Minv
 
 # Crop image for region of interest
+#영역 자르기
+#img : 이미지, ROI : 자를 영역
 def crop(img, ROI):
     # Create blank img with same size as input img
     blank = np.zeros(img.shape[:2], np.uint8)
@@ -582,21 +600,14 @@ def crop(img, ROI):
     return cv.bitwise_and(img, img, mask=region_of_interest)
 
 # Merge to masks
+#두 마스크에서 공통된 부분을 남기는 함수
+#frame : 이미지, img1 : 마스크 1, img2 : 마스크 2
 def merge(frame, img1, img2):
     both = frame.copy()
     both[np.where(np.logical_and(img1==0, img2==0))] = 0
     return both
 
-# Overlay two images
-def overlay(img, overlay):
-    img[np.where(overlay!=0)] = [0,255,0]
-    return img
-
-# Overlay two images with alpha
-def overlay_alpha(img, overlay):
-    return cv.addWeighted(img, 1, overlay.astype(np.uint8), 0.5, 0.0)
-
-
+#다항 곡선을 따라 선에 빈 공간 여부로 점선인지 실선으로 판단하는 함수
 def detect_dash_line_along_curve(binary_img, fit, ploty, threshold_gap=50, threshold_segment=50):
     """
     다항 곡선을 따라 점선인지 실선인지 분석.
@@ -646,6 +657,8 @@ def detect_dash_line_along_curve(binary_img, fit, ploty, threshold_gap=50, thres
 
 
 #결과인 다항식을 바탕으로 선을 시각화
+#지금은 사용 안함
+#binary_img : 이진 이미지 데이터, fit : 다항식, ploty : y 범위, line_type : 선의 종류
 def draw_lane_curve(binary_img, fit, ploty, line_type):
     color = (0, 255, 0) if line_type == "solid" else (0, 0, 255)
     curve_img = np.zeros((binary_img.shape[0], binary_img.shape[1], 3), dtype=np.uint8)
@@ -657,7 +670,7 @@ def draw_lane_curve(binary_img, fit, ploty, line_type):
             cv.line(curve_img, pt1, pt2, color, 3)
     return curve_img
 
-
+#이미지에 투명도를 적용시켜 채우기 위한 함수
 def blend_transparent_overlay(base_img, overlay_mask, color=(0, 255, 255), alpha=0.4):
     """
     base_img: 원본 BGR 이미지
@@ -671,6 +684,10 @@ def blend_transparent_overlay(base_img, overlay_mask, color=(0, 255, 255), alpha
     blended = cv.addWeighted(base_img, 1, cv.bitwise_and(overlay, mask_3ch), alpha, 0)
     return blended
 
+#원근 변환이 된 이미지에서 진행된 차선 추적 결과값을 원본 이미지에 올리는 함수
+#original_img : 원본 이미지, left_fit : 왼쪽 차선의 다항식, right_fit : 오른쪽 차선의 다항식, warped_shape : 원근 변환된 이미지의 shape,
+#Minv : 역 원근변환을 위한 변환 행렬, left_type : 왼쪽 차선의 타입, right_type : 오른쪽 차선의 타입
+#left_color : 왼쪽 차선의 결과 표시 색, right_color : 오른쪽 차선의 결과 표시 색, fill_color : 차선 사이 표시 색
 def draw_lane_area_with_labels(original_img, left_fit, right_fit, warped_shape, Minv,
                                left_type="unknown", right_type="unknown",
                                left_color=(0, 255, 0), right_color=(255, 0, 0), fill_color=(0, 255, 255)):
@@ -724,7 +741,10 @@ def draw_lane_area_with_labels(original_img, left_fit, right_fit, warped_shape, 
 
     return result
 
-
+#lab 방식으로 clahe 동작
+#명암 대비를 올려서 어두운곳도 잘 보이게
+#cpu를 많이 먹는다고하여 제외됨
+#img : 이미지
 def clahe(img):
 
     lab = cv.cvtColor(img, cv.COLOR_BGR2LAB)
@@ -736,7 +756,10 @@ def clahe(img):
 
     return img_clahe
 
-
+#hls 방식으로 clahe 동작
+#명암 대비를 올려서 어두운곳도 잘 보이게
+#cpu를 많이 먹는다고하여 제외됨
+#img : 이미지
 def hls_clahe(img):
     hls = cv.cvtColor(img, cv.COLOR_BGR2HLS)
     h, l, s = cv.split(hls)
@@ -748,7 +771,8 @@ def hls_clahe(img):
     img_clahe = cv.cvtColor(hls_eq, cv.COLOR_HLS2BGR)
     return img_clahe
 
-
+#이미지의 특정 탐지 영역의 밝기 확인
+#image : 이미지, x_ratio : 탐지 영역의 x 중앙값, y_ratio : 탐지 영역의 y 상단 값, region_size : 탐지 영역의 크기 
 def get_region_brightness(image, x_ratio=0.5, y_ratio=0.6, region_size=0.2):
     height, width = image.shape[:2]
     x_start = int(width * (x_ratio - region_size / 2))
@@ -763,6 +787,9 @@ def get_region_brightness(image, x_ratio=0.5, y_ratio=0.6, region_size=0.2):
     return brightness
 
 # 호출
+#color 방식으로 차선 탐지
+#전처리 과정이 color 방식으로 다를 뿐 그 이후는 같음
+#frame : 이미지, M : 원근변환을 위한 행렬, Minv : 역 원근변환을 위한 행렬, LT : 차선감지 클래스
 def line_check(frame, M, Minv, LT):
     orig = frame.copy()
     """
@@ -772,16 +799,21 @@ def line_check(frame, M, Minv, LT):
     brightness = get_region_brightness(img_clahe)
     """
 
+    #hls 값을 통해 흰색과 노란색 계통만 남기고 흑백화
     color = color_space_hls(orig)
 
+    #원본 이미지의 밝기 평균값 확인
     brightness = get_region_brightness(orig)
-
+    #해당 밝기 평균값을 바탕으로 80 ~ 240 사이의 threshold 값 구하기
     threshold_val = int(np.clip(brightness * 1.2, 80, 240))
-
+    #해당 threshold를 바탕으로 흑백 이미지에서 2진 이미지로 변경
     _, binary_result = cv.threshold(color, threshold_val, 255, cv.THRESH_BINARY)
 
 
     #return cv.bitwise_and(binary_result, binary_result, mask=shadow_mask)
+
+    #여기서 부터는 동일
+    #차선 판단을 수월하게 하기 위한 원근변환
     color = warp(binary_result, M)
 
 
@@ -791,10 +823,14 @@ def line_check(frame, M, Minv, LT):
 
     
     #result = central_sliding_windows_based_on_existing(color, nwindows= 5, minimum =100, draw=True)
+    #전처리 후 차선 감지
     result = LT.update(color)
     
     
+    #여기서부터는 감지된 차선을 바탕으로 차선의 종류(실선, 점선) 판단
 
+
+    #차선 데이터를 바탕으로 왼쪽과 오른쪽 차선을 색으로 분리
     lower_red = np.array([0, 0, 200])
     upper_red = np.array([50, 50, 255])
     #mask_red = cv.inRange(result["image"], lower_red, upper_red)
@@ -812,6 +848,8 @@ def line_check(frame, M, Minv, LT):
 
     ploty = np.linspace(0, result["image"].shape[0] - 1, num=result["image"].shape[0])
     if result["left"]["fit"] is not None:
+        #차선의 다항식이 있으면 그 수식을 바탕으로 차선 종류 판단
+        #다항식을 이미지에서 따라가며 중간에 빈 공간이 있나 여부로 점선, 실선 판단
         left_line_type = detect_dash_line_along_curve(mask_combined, result["left"]["fit"], ploty)
         #left_lane_img = draw_lane_curve(mask_combined, result["left"]["fit"], ploty, left_line_type)
     else:
@@ -824,6 +862,8 @@ def line_check(frame, M, Minv, LT):
     else:
         right_line_type = "unknown"
         
+    #결과를 원본 이미지에 표시하기
+    #원근 변환된 이미지를 원본에 맞춰서 역 원근변환 
     result = draw_lane_area_with_labels(
         #original_img=cv.cvtColor(orig, cv.COLOR_BGR2RGB),
         original_img=orig,
@@ -839,15 +879,19 @@ def line_check(frame, M, Minv, LT):
     )
     return result
 
+#소벨 에지를 통해 2진 데이터를 내보내는 함수
+#img : 원본 이미지
 def combined_threshold(img):
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
     # 소벨 에지 검출
+    #밝기 값이 급격히 변하는 영역을 감지 -> 윤곽선이 감지가 됨
     sobelx = cv.Sobel(gray, cv.CV_64F, 1, 0, ksize=3)
     abs_sobelx = np.absolute(sobelx)
     scaled_sobel = np.uint8(255 * abs_sobelx / np.max(abs_sobelx))
 
     #cv.imshow('scaled_sobel1', scaled_sobel)
     # 임계값 적용
+    #임계값으로 마스킹 해서 2진 이미지로 변환
     thresh_min = 15
     thresh_max = 100
     sxbinary = np.zeros_like(scaled_sobel)
@@ -859,6 +903,7 @@ def combined_threshold(img):
     cv.imshow('sxbinary', combined_binary)
     """
     # 색상 임계값
+    #외곽만 하면 안되는 경우 있어서 어느정도 색상도 약하게 마스킹을 해서 추출
     hls = cv.cvtColor(img, cv.COLOR_BGR2HLS)
     s_channel = hls[:, :, 2]
     s_thresh_min = 100
@@ -879,6 +924,8 @@ def open_img(img, iterations):
     return cv.morphologyEx(img, cv.MORPH_OPEN, kernel_small, iterations=iterations)
 
 # 최초호출 
+#soble 방식으로 차선 탐지
+#전처리 과정이 soble 방식으로 다를 뿐 그 이후는 같음
 def line_check_sobel(frame, M, Minv, LT):
     orig = frame.copy()
 
@@ -890,11 +937,12 @@ def line_check_sobel(frame, M, Minv, LT):
 
     sobel_test = combined_threshold(blurred)
     """
-
+    #sobel 방식을 통해 윤곽선을 바탕으로 2진화(color 방식을 약하게 적용해 선 내부도 어느정도 강조)
     sobel_test = combined_threshold(orig)
-
+    #노이즈 제거를 위환 open 연산
     binary_result = open_img(sobel_test, 1)
 
+    #여기서부터는 동일 line_check 에 주석 하겠음
     color = warp(binary_result, M)
 
 
@@ -972,6 +1020,8 @@ def example():
     ret, frame = cap.read()
 
     # If challenge video is played -> Define different points for transformation 
+
+    #차선 인식을 위한 다각형 좌표
     height, width = frame.shape[:2]
     src = np.float32([
         [width * 0.45, height * 0.57],
